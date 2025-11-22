@@ -1,0 +1,288 @@
+---
+title: ''
+author: ''
+date: ''
+output:
+  pdf_document:
+    fig_crop: false
+    highlight: tango
+    number_sections: false
+    fig_caption: true
+    keep_tex: true
+    includes:
+      in_header: Estilo.tex
+  html_document:
+    df_print: paged
+subtitle: ''
+classoption: a4paper
+always_allow_html: true
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+
+```{=tex}
+\begin{center}
+ {\Large
+  DEPARTAMENTO DE ESTATÍSTICA} \\
+ \vspace{0.5cm}
+   \begin{figure}[!t]
+    \centering
+    \includegraphics[width=9cm, keepaspectratio]{logo-UnB.eps}
+   \end{figure}
+ \vskip 1em
+ {\large
+  7 de outubro de 2025}
+ \vskip 3em
+ {\LARGE
+ \textbf{Lista 2: Ajustando uma RNA "no braço".}} \\
+  \vskip 1em
+ {\Large
+ Prof. Guilherme Rodrigues} \\
+  \vskip 1em
+ {\Large
+ Redes Neurais Profundas} \\
+  \vskip 1em
+ {\Large
+ Tópicos em Estatística 2} \\
+\end{center}
+
+ \vskip 5em
+ 
+  \begin{enumerate}[label={(\Alph*)}]
+    \item \textbf{As questões deverão ser respondidas em um único relatório \emph{PDF} ou \emph{html}, produzido usando as funcionalidades do \emph{Rmarkdown} ou outra ferramenta equivalente}.
+    \item \textbf{O aluno poderá consultar materiais relevantes disponíveis na internet, tais como livros, \emph{blogs} e artigos}.
+    \item \textbf{O trabalho é individual. Suspeitas de plágio e compartilhamento de soluções serão tratadas com rigor.}
+    \item \textbf{Os códigos \emph{R} utilizados devem ser disponibilizados na integra, seja no corpo do texto ou como anexo.}
+    \item \textbf{O aluno deverá enviar o trabalho até a data especificada na plataforma \emph{Microsoft Teams}.}
+    \item \textbf{O trabalho será avaliado considerando o nível de qualidade do relatório, o que inclui a precisão das respostas, a pertinência das soluções encontradas, a formatação adotada, dentre outros aspectos correlatos.}
+    \item \textbf{Escreva seu código com esmero, evitando operações redundantes, comentando os resultados e usando as melhores práticas em programação.}
+    \item \textbf{O uso de Modelos de Linguagem de Grande Escala (LLMs), como ChatGPT, Gemini ou equivalentes, é permitido exclusivamente como ferramenta de apoio para organização de ideias, revisão textual, esclarecimento de conceitos e sugestões de escrita. O uso indiscriminado pode ser caracterizado como plágio acadêmico.}
+\end{enumerate}
+```
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = T, message=FALSE, warning=FALSE, cache=T)
+pacman::p_load("neuralnet", "tidyverse", "latex2exp", "knitr", "NeuralNetTools", "Cairo", "hexbin", "tictoc", "microbenchmark")
+
+# Definindo o aspecto dos gráficos
+tema.graficos <- theme_light() + 
+  theme(plot.margin = unit(rep(.2, 4), "cm"),
+        axis.title.y = element_text(margin = unit(rep(.2, 4), "cm"), size = 8),
+        axis.title.x = element_text(margin = unit(rep(.2, 4), "cm"), size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.text.x = element_text(size = 8),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank(),
+        panel.border = element_rect(colour=gray(.85)),
+        legend.title = element_text(size = 7),
+        legend.text = element_text(size = 7),
+        legend.margin = margin(l = 5, unit = 'pt'),
+        strip.text.x = element_text(size = 8),
+        strip.text.y = element_text(size = 8)
+  )
+theme_set(tema.graficos)
+```
+
+
+\newpage
+Considere um processo gerador de dados da forma 
+\begin{align*}
+Y & \sim N(\mu, \sigma^2=1) \\
+\mu & = |X_1^3 - 30 \text{sen} (X_2) + 10| \\
+X_j & \sim \text{Uniforme}(-3, 3), \quad j=1, 2.
+\end{align*}
+
+Neste modelo (que iremos considerar como o "**modelo real**"), a esperança condicional de $Y$ é dada por
+$E(Y|X_1, X_2) = |X_1^3 - 30 \text{sen} (X_2) + 10|$. A superfície tridimensional $(E(Y|X_1, X_2), X_1, X_2)$ está representada em duas dimensões cartesianas na Figura \ref{fig:medias}.
+
+O código a seguir simula $m=100.000$ observações desse processo. 
+
+\vspace{.2cm}
+
+```{r}
+### Gerando dados "observados"
+set.seed(22025)
+m.obs <- 100000
+dados <- tibble(x1.obs=runif(m.obs, -3, 3), 
+                x2.obs=runif(m.obs, -3, 3)) %>%
+  mutate(mu=abs(x1.obs^3 - 30*sin(x2.obs) + 10), 
+         y=rnorm(m.obs, mean=mu, sd=1))
+```
+
+Nesta lista estamos interessados em estimar o modelo acima usando uma rede neural simples, ajustada sobre os dados simulados. Precisamente, queremos construir uma rede neural com apenas uma camada escondida contendo dois neurônios. 
+
+Matematicamente, a rede é descrita pelas seguintes equações:
+\begin{align*}
+f_{0, 1} & = x_1  w1 + x_2 w2 + b_1 \\
+f_{0, 2} & = x_1  w3 + x_2 w4 + b_2 \\
+h_{1, 1} & = a(f_{0, 1}) \\
+h_{1, 2} & = a(f_{0, 2}) \\
+f_{1, 1} & = h_{1, 1} w_5 + h_{1, 2} w_6 + b_3 \\
+\hat{y} & = h_{2, 1} = f_{1, 1},  
+\end{align*}
+onde $a(x) = \frac{1}{1+e^{-x}}$ representa a função de ativação logística (sigmoide). 
+
+Adotaremos como função de perda o erro quadrático médio, expresso por 
+$$
+J(\bfphi) = \frac{1}{m} \sum_{i=1}^m L(f(x_{1i}, x_{2i}; \bfphi), y_i) = \frac{1}{m} \sum_{i=1}^m (y_i - \hat{y}_i)^2,
+$$
+onde $x_{ji}$ representa a j-ésima covariável (*feature*) da i-ésima observação, $\bfphi = (w_1, \ldots, w_6, b_1, b_2, b_3)$ é o vetor de pesos e viéses (parâmetros) e, pela definição da rede, 
+$$f(x_{1i}, x_{2i}; \bfphi)=\hat{y}_i=a(x_{1i}  w_1 + x_{2i} w_3 + b_1) w_5 + a(x_{1i}  w_2 + x_{2i} w_4 + b_2) w_6 + b_3.$$
+Uma representação gráfica da rede está apresentada na Figura 2.
+
+Em notação matricial, a rede neural pode ser descrita por
+\begin{align*}
+\bff_0 & = \bfOmega_0 \bfx + \bfbeta_0 \\
+\bfh_1 & = \bfa(\bff_0)  \\
+f_1 & = \bfOmega_1 \bfh_1 + \bfbeta_1 \\
+\hat{y} & = h_2 = f_1,  
+\end{align*}
+onde 
+\begin{equation*}
+\bfx = \bfh_0 = \begin{pmatrix}
+x_1  \\
+x_2  
+\end{pmatrix}, \;
+\bfOmega_0  = \begin{pmatrix}
+w_1 & w_2 \\
+w_3 & w_4 
+\end{pmatrix}, \; 
+\bfbeta_0 = \begin{pmatrix}
+b_1  \\
+b_2  
+\end{pmatrix}, \;
+\bff_0 = \begin{pmatrix}
+f_{0, 1}  \\
+f_{0, 2}  
+\end{pmatrix}, \;
+\bfh_1 = \begin{pmatrix}
+h_{1, 1}  \\
+h_{1, 2} 
+\end{pmatrix}, \;
+\bfOmega_1  = \begin{pmatrix}
+w_5 & w_6  
+\end{pmatrix}, \;
+\beta_1 = b_3 \quad \text{e} 
+\end{equation*}
+\begin{equation*}
+\bfPhi = \{\bfOmega = \{\bfOmega_0, \bfOmega_1\},  \bfbeta = \{\bfbeta_0, \beta_1\}\}.
+\end{equation*}
+
+\newpage
+
+```{r medias, echo=T, fig.width=4, fig.height=2.5, fig.pos='ht', fig.align='center', fig.cap="Gráfico da superfície do valor esperado da variável resposta $Y$ em função das variáveis de entrada $X_1$ e $X_2$."}
+### Figura 1: Gerando o gráfico da superfície
+n <- 100
+x1 <- seq(-3, 3, length.out=n)
+x2 <- seq(-3, 3, length.out=n)
+dados.grid <- as_tibble(expand.grid(x1, x2)) %>%
+  rename_all(~ c("x1", "x2")) %>%
+  mutate(mu=abs(x1^3 - 30*sin(x2) + 10))
+
+ggplot(dados.grid, aes(x=x1, y=x2)) +
+  geom_point(aes(colour=mu), size=2, shape=15) +
+  coord_cartesian(expand=F) +
+  scale_colour_gradient(low="white", 
+                        high="black",
+                        name=TeX("$E(Y|X_1, X_2)$")) + 
+  xlab(TeX("$X_1$")) + ylab(TeX("$X_2$"))
+```
+
+```{r rede, echo=T, fig.width=4, fig.height=2.5, fig.pos='ht', fig.align='center', fig.cap="Arquitetura da rede neural artificial. Adotamos função de ativação sigmoide e linear nas camadas escondidas e de saída, respectivamente."}
+### Figura 2: Arquitetura da RNA.
+par(mar=c(0, 0, 0, 0))
+wts_in <- rep(1, 9)
+struct <- c(2, 2, 1) # dois inputs, dois neurônios escondidos e um output
+plotnet(wts_in, struct = struct,
+       x_names="", y_names="",
+       node_labs=F, rel_rsc=.7)
+aux <- list(
+ x=c(-.8, -.8, 0, 0, .8, rep(-.55, 4), -.12, -0.06, .38, .38, .7),
+ y=c(.73, .28, .73, .28, .5, .78, .68, .48, .32, .88, .5, .68, .44, .7),
+ rotulo=c("x_1", "x_2", "h_1", "h_2", "\\hat{y}", "w_1", "w_3", "w_2", "w_4",
+          "b_1", "b_2", "w_5", "w_6", "b_3")
+)
+walk(transpose(aux), ~ text(.$x, .$y, 
+                            TeX(str_c("$", .$rotulo, "$")), cex=.8))
+```
+
+\newpage
+**Considerando as informações acima, responda os itens a seguir.**
+
+\noindent
+**a)** Crie uma função computacional para calcular o valor previsto da variável resposta $\hat{y}=f(\bfx; \bfphi)$ em função de $\bfx$ e $\bfPhi$. Use a função para calcular $\hat{y}$ para 
+
+\begin{equation*}
+\bfPhi^\star = \left\{ 
+\bfOmega = \left\{
+\bfOmega_0 = 
+  \begin{pmatrix}
+  0.1 & 0.1 \\
+  0.1 & 0.1
+  \end{pmatrix}, 
+\bfOmega_1  = 
+  \begin{pmatrix}
+  0.1 & 0.1  
+  \end{pmatrix} \right\}, 
+\bfbeta = \left\{
+\bfbeta_0 = 
+  \begin{pmatrix}
+  0.1 \\ 0.1  
+  \end{pmatrix}, 
+\bfbeta_1 = 0.1 \right\}
+\right\}
+\; \text{e} \; \bfx=\begin{pmatrix} 2 \\ 1 \end{pmatrix}.
+\end{equation*}
+
+
+
+\vspace{.4cm}
+\noindent
+**b)** Crie uma função computacional para calcular a função de perda $J(\bfphi)$. Em seguida, divida o conjunto de dados observados de modo que as **primeiras** 80.000 amostras componham o conjunto de **treinamento**, as próximas 10.000 o de **validação**, e as **últimas** 10.000 o de **teste**. Qual é a perda da rede **no conjunto de teste** quando $\bfphi=\bfPhi^\star$?
+
+
+\vspace{.4cm}
+\noindent
+**c)** Use a regra da cadeia para encontrar expressões algébricas para o vetor gradiente
+$$
+\nabla_{\bfphi} J(\bfphi) = \left(\frac{\partial J}{\partial w_1},
+\ldots, \frac{\partial J}{\partial b_3} \right).
+$$
+
+\vspace{.4cm}
+\noindent
+**d)** Crie uma função computacional que receba como entrada a lista $\bfPhi$, uma matrix design ($\bfx$) e as respectivas observações ($\bfy$) e forneça, como saída, o gradiente definido no item c). Apresente o resultado da função aplicada sobre o **banco de treinamento**, quando $\bfPhi=\bfPhi^\star$. Atenção: implemente o algoritmo *back-propagation* para evitar realizar a mesma operação múltiplas vezes.
+
+\vspace{.4cm}
+\noindent
+**e)** Aplique o método do gradiente para encontrar os parâmetros que minimizam a função de perda no **conjunto de treino**. Inicie o algoritmo no ponto 
+\begin{equation*}
+\bfPhi^0 = \left\{ 
+\bfOmega = \left\{
+\bfOmega_0 = 
+  \begin{pmatrix}
+  0 & 0 \\
+  0 & 0
+  \end{pmatrix}, 
+\bfOmega_1  = 
+  \begin{pmatrix}
+  0 & 0  
+  \end{pmatrix} \right\}, 
+\bfbeta = \left\{
+\bfbeta_0 = 
+  \begin{pmatrix}
+  0 \\ 0  
+  \end{pmatrix}, 
+\bfbeta_1 = 0 \right\}
+\right\},
+\end{equation*}
+use taxa de aprendizagem $\epsilon=0.1$ e rode o algoritmo por 100 iterações. Para cada uma delas, calcule a perda no **conjunto de validação**. Apresente a lista de parâmetros estimados (isso é, aqueles que geraram a menor perda na validação), indique em qual iteração eles foram observados e comente o resultado.
+
+
+\vspace{.4cm}
+\noindent
+**f)** Apresente o gráfico do custo no conjunto de treinamento e no de validação (uma linha para cada) em função do número da iteração do processo de otimização. Comente os resultados.

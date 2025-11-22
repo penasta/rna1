@@ -1,0 +1,23 @@
+---
+title: "Lista 4 —  Ajustando a rede com PyTorch"
+subtitle: "Redes Neurais Profundas | Prof. Dr. Guilherme Souza Rodrigues"
+author:
+  - name: Bruno Gondim Toledo
+    affiliation: 
+      - name: Universidade de Brasília (UnB) 
+    url: https://penasta.github.io
+date: last-modified
+output: html_document
+geometry: a4paper
+fontsize: 12pt
+format:
+  html:
+    code-fold: true
+    code-summary: "Mostrar códigos"
+    toc: true
+    toc-title: "Índice"
+    lightbox: true
+---
+
+
+

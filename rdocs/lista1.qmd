@@ -1,0 +1,540 @@
+---
+title: "Lista 1 — Otimização em RNA"
+subtitle: "Redes Neurais Profundas | Prof. Dr. Guilherme Souza Rodrigues"
+author:
+  - name: Bruno Gondim Toledo
+    affiliation: 
+      - name: Universidade de Brasília (UnB) 
+    url: https://penasta.github.io
+date: last-modified
+output: html_document
+geometry: a4paper
+fontsize: 12pt
+format:
+  html:
+    code-fold: true
+    code-summary: "Mostrar códigos"
+    toc: true
+    toc-title: "Índice"
+---
+
+\newpage
+
+```{r setup, include=FALSE}
+if(!require(pacman))install.packages("pacman")
+p_load(tidyverse,DT,gridExtra)
+```
+
+# Exercício 1
+
+
+Considere a função
+
+$$f(x_1,x_2)= x_1^4+x_2^4+x_1^2x_2+x_1x_2^2-20x_1^2-15x_2^2$$
+para responder os itens a seguir.
+
+# a) 
+Apresente um gráfico com as curvas de nível de $f(x_1,x_2)$. Quantos pontos críticos a função parece ter? Dica para usuários do R: use a função `geom_contour_filled()`.
+
+```{r}
+x1 <- seq(-5, 5, 0.1)
+x2 <- seq(-5, 5, 0.1)
+
+fx <- function(x1, x2) {
+  return(x1^4 + x2^4 + x1^2 * x2 + x1 * x2^2 - 20 * x1^2 - 15 * x2^2)
+}
+
+grid <- expand.grid(x1 = x1, x2 = x2)
+
+grid$fx <- mapply(fx, grid$x1, grid$x2)
+
+ggplot(grid, aes(x = x1, y = x2, z = fx)) +
+  geom_contour_filled() +
+  theme_void() +
+  theme(legend.position="none")
+```
+
+Observando o gráfico de contorno, considerando valores $-5 < x_1,x_2 < 5$, a função aparenta ter diversos valores críticos, sendo três mínimos locais, um mínimo global — próximo do valor $x_1 = -3.5, x_2 = -3.2$ —, além de diversos pontos de sela entre os mínimos locais e global.
+
+# b) 
+Encontre (algebricamente) o gradiente de f em relação ao vetor x = (x1, x2). Isso é,
+$$\nabla_xf(\mathbf{x})= \left( \frac{\partial f}{\partial x_1},\frac{\partial f}{\partial x_2} \right). $$
+
+Seja 
+
+$$
+f(x_1,x_2)= x_1^4+x_2^4+x_1^2x_2+x_1x_2^2-20x_1^2-15x_2^2,
+$$
+e
+
+\begin{equation}
+\begin{split}
+\frac{\partial f}{\partial x_1} & = 4x_1^3 + 2x_1x_2 + x_2^2 - 40x_1, \\
+\frac{\partial f}{\partial x_2} & = 4x_2^3+2x_1x_2+x_1^2-30x_2.
+\end{split}
+\end{equation}
+
+Então,
+
+\begin{equation}
+\begin{split}
+\nabla_xf(\mathbf{x}) & = \left( \frac{\partial f}{\partial x_1},\frac{\partial f}{\partial x_2} \right) \\
+ & = \left( 4x_1^3 + 2x_1x_2 + x_2^2 - 40x_1, 4x_2^3+2x_1x_2+x_1^2-30x_2 \right).
+\end{split}
+\end{equation}
+
+# c)
+Crie uma função computacional que implemente o método do gradiente para minimizar a função em estudo. Permita ao usuário definir a taxa de aprendizado, o número de passos e o ponto de partida.
+
+```{r}
+
+gradiente <- function(learning_rate, n_steps, x1, x2) {
+  
+  df <- data.frame(step = numeric(),
+                   x1 = numeric(),
+                   x2 = numeric(),
+                   fx = numeric())
+  
+  init <- data.frame(step = 0,
+                   x1 = x1,
+                   x2 = x2,
+                   fx = fx(x1,x2))
+  
+  df <- rbind(df,init)
+  
+  for (i in 1:n_steps){
+    
+    dpx1 <- (4 * x1 ^3) + (2 * x1 * x2) + (x2 ^2) - (40 * x1)
+    dpx2 <- (4 * x2 ^3) + (2 * x1 * x2) + (x1 ^2) - (30 * x2)
+    
+    x1 <- x1 - dpx1 * learning_rate
+    x2 <- x2 - dpx2 * learning_rate
+    fx <- fx(x1,x2)
+    
+    if(!is.finite(fx) || abs(fx - df$fx[i]) < 10e-6){
+      break
+    }
+    
+    result <- data.frame(step = i,
+                   x1 = x1,
+                   x2 = x2,
+                   fx = fx(x1,x2))
+    
+    df <- rbind(df,result)
+    
+    }
+  p <- ggplot() +
+  geom_contour_filled(data = grid, aes(x = x1, y = x2, z = fx)) +
+  geom_path(data = df, aes(x = x1, y = x2), linewidth = 1.5) +
+  theme_void() +
+  theme(legend.position="none")
+  return(list(p,df))
+  }
+
+resultados <- gradiente(0.01,100,-3,-3)
+resultados[[1]]
+
+```
+
+```{=html}
+<details>
+<summary>Ver tabela</summary>
+```
+
+```{r}
+datatable(resultados[[2]])
+```
+
+```{=html}
+</details>
+```
+
+Além do solicitado no enunciado, adicionei também um critério de parada, seja por convergência ou por divergência, evitando custo computacional desnecessário. O usuário define o número máximo de iterações, porém se o gradiente convergir ou divergir antes deste máximo, a função irá retornar os passos antes do final do loop.
+
+# d)
+Use a função criada no item c) para encontrar o valor obtido pelo método do gradiente partindo-se do ponto inicial $(x_1^{(0)},x_2^{(0)})=(0,5)$. Use taxa de aprendizado igual a 0.01 e execute 100 passos.
+
+```{r}
+gradiente(0.01,100,0,5)[[1]]
+```
+
+```{=html}
+<details>
+<summary>Ver tabela</summary>
+```
+
+```{r}
+datatable(gradiente(0.01,100,0,5)[[2]])
+```
+
+```{=html}
+</details>
+```
+
+# e)
+Repita o item d), agora com as seguintes taxas de aprendizado: 1, 0.1, 0.01, 0.001, 0.0001. Qual dessas opções lhe parece mais apropriada nesse caso? Justifique sua resposta.
+
+## Learning rate = 1
+
+```{=html}
+<details>
+<summary>Ver tabela</summary>
+```
+
+```{r}
+datatable(gradiente(1,100,0,5)[[2]])
+```
+
+```{=html}
+</details>
+```
+
+## Learning rate = 0.1
+
+```{=html}
+<details>
+<summary>Ver tabela</summary>
+```
+
+```{r}
+datatable(gradiente(0.1,100,0,5)[[2]])
+```
+
+```{=html}
+</details>
+```
+
+## Learning rate = 0.01
+
+```{r}
+gradiente(0.01,100,0,5)[[1]]
+```
+
+```{=html}
+<details>
+<summary>Ver tabela</summary>
+```
+
+```{r}
+datatable(gradiente(0.01,100,0,5)[[2]])
+```
+
+```{=html}
+</details>
+```
+
+## Learning rate = 0.001
+
+```{r}
+gradiente(0.001,100,0,5)[[1]]
+```
+
+```{=html}
+<details>
+<summary>Ver tabela</summary>
+```
+
+```{r}
+datatable(gradiente(0.001,100,0,5)[[2]])
+```
+
+```{=html}
+</details>
+```
+
+## Learning rate = 0.0001
+
+```{r}
+gradiente(0.0001,100,0,5)[[1]]
+```
+
+```{=html}
+<details>
+<summary>Ver tabela</summary>
+```
+
+```{r}
+datatable(gradiente(0.0001,100,0,5)[[2]])
+```
+
+```{=html}
+</details>
+```
+
+Nota-se pelos resultados que para valores de *learning rate* $\epsilon = (1;0,1)$ a função divergiu. Para valores $\epsilon = (0,001; 0,0001)$ a função iterou até o limite de 100 iterações fixadas, e não chegou a um mínimo segundo o critério de parada definido, sendo que para $\epsilon = 0,0001$ o valor da função de perda ainda estava bem longe do valor alvo. Por outro lado, para $\epsilon = 0,01$, a função chegou a um mínimo segundo o critério de parada definido, e o fez em poucas iterações, ativando a cláusula de parada por convergência numérica.
+
+Desta forma, o valor $\epsilon = 0,01$ parece ser o mais coerente dentre as opções apresentadas.
+
+# f)
+Fixe a semente do gerador de números aleatórios no valor 42 (se estiver usando o **R**, basta executar o código `set.seed(42)`). Repita novamente o item d), agora partindo de 10 pontos escolhidos aleatoriamente (Uniformemente) no quadrado $-5 < x_1, x_2 < 5$. Refaça o gráfico do item a) e adicione uma linha representando o caminho percorrido por cada uma das 10 otimizações. Qual foi o percentual de vezes em que o algoritmo encontrou o mínimo global da função (despresando um eventual desvio de menor importância)?
+
+```{r}
+set.seed(42)
+pontos <- runif(20, -5, 5)
+
+trajetorias <- list()
+
+for (i in 1:10) {
+  resultado <- gradiente(learning_rate = 0.01, n_steps = 100, x1 = pontos[i], x2 = pontos[i+10])[[2]]
+  trajetorias[[i]] <- resultado
+}
+
+traj_all <- do.call(rbind, Map(function(df, id) {
+  df$traj_id <- id
+  df
+}, trajetorias, seq_along(trajetorias)))
+
+ggplot() +
+  geom_contour_filled(data = grid, aes(x = x1, y = x2, z = fx)) +
+  geom_path(data = traj_all, aes(x = x1, y = x2, group = traj_id, color = as.factor(traj_id)), linewidth = 1.5) +
+  theme_void() +
+  theme(legend.position="none")
+
+```
+
+Analisando o gráfico, nota-se que em apenas uma das tentativas, o algoritmo convergiu para o mínimo global aparente. Todas as outras tentativas convergiram, porém para um dos três mínimos locais aparentes. 
+
+Este resultado concide com o discutido em sala de aula, isto é, o método do gradiente descendente é eficaz em buscar mínimos de função, porém na sua forma mais simples de implementação, ele é incapaz de escapar de um mínimo local, visto que irá tomar uma trajetória descendente sempre que encontrar um mínimo próximo do ponto em que está. Sabe-se que em funções estritamente convexas, o gradiente descendente irá encontrar o mínimo global. Entretanto, funções com mínimos locais e pontos de sela podem atrapalhar a convergência do algoritmo. Neste caso, uma das possíveis soluções discutidas e aqui implementadas é justamente testar vários pontos iniciais, na esperança que algum ou alguns deles iniciem-se próximos ao mínimo global da função. Neste caso bidimensional, a figura ajuda bastante a identificação dos mínimos e as convergências, entretanto num caso multidimensional, bastaria avaliar o valor da função para identificação do mínimo global, ou ao menos um mínimo local bom o suficiente.
+
+# g)
+Repita o item d), substituindo o método do gradiente pelo método do gradiente com momento (veja a Seção 8.3.2 do livro Deep Learning). Use taxa de aprendizado $\epsilon = 0.01$, parâmetro de momento $\alpha = 0.9$ e velocidade inicial v = 0.
+
+```{r}
+gradiente_momento <- function(alpha, learning_rate, n_steps, x1, x2) {
+  
+  df <- data.frame(step = numeric(),
+                   x1 = numeric(),
+                   x2 = numeric(),
+                   fx = numeric())
+  
+  init <- data.frame(step = 0,
+                   x1 = x1,
+                   x2 = x2,
+                   fx = fx(x1,x2))
+  
+  df <- rbind(df,init)
+  
+  v1 <- 0
+  v2 <- 0
+  
+  for (i in 1:n_steps){
+    
+    dpx1 <- (4 * x1 ^3) + (2 * x1 * x2) + (x2 ^2) - (40 * x1)
+    dpx2 <- (4 * x2 ^3) + (2 * x1 * x2) + (x1 ^2) - (30 * x2)
+    
+    v1 <- alpha * v1 - learning_rate * dpx1
+    v2 <- alpha * v2 - learning_rate * dpx2
+    
+    x1 <- x1 + v1
+    x2 <- x2 + v2
+    fx <- fx(x1,x2)
+    
+    if(!is.finite(fx) || abs(fx - df$fx[i]) < 10e-6 + mean(v1,v2)){
+      break
+    }
+    
+    result <- data.frame(step = i,
+                   x1 = x1,
+                   x2 = x2,
+                   fx = fx(x1,x2))
+    
+    df <- rbind(df,result)
+    
+  }
+  ggplot() +
+  geom_contour_filled(data = grid, aes(x = x1, y = x2, z = fx)) +
+  geom_path(data = df, aes(x = x1, y = x2), linewidth = 1.5) +
+  theme_void() +
+  theme(legend.position="none")
+}
+
+gradiente_momento(.9,.01,100,0,5)
+```
+
+Pela Figura acima, nota-se que adicionando o componente de momento ao algoritmo de gradiente descendente, os passos da função de tornam muito mais erráticos, permitindo que a função passeie pelo espaço paramétrico por mais tempo, e impedindo o gradiente de descer nos primeiros vales que percorre. É possível observar que a função passou por todos os quatro vales de mínimos, até convergir em um dos mínimos locais.
+
+```{r}
+gradiente_momento(.9,.01,100,-5,0)
+```
+
+Observando a Figura acima, nota-se que mudando o ponto de partida, o algoritmo conseguiu cumprir o seu propósito, isto é, escapar de um mínimo local e direcionar para o aparente mínimo global da função de perda.
+
+Desta forma, pode-se dizer que adicionar o conceito de momento pode ser útil para impedir o gradiente de estacionar em mínimos locais, entretanto isto ainda não é garantindo, dependendo ainda bastante do ponto inicial escolhido.
+
+# h)
+Repita o item d), substituindo o método do gradiente pelo método RMSProp (veja a Seção 8.5.2 do livro Deep Learning). Use taxa de aprendizado $\epsilon = 0.001$, taxa de decaimento $\rho = 0.9$ e constante $\delta = 10^{-6}$.
+
+```{r}
+gradiente_rmsprop <- function(learning_rate, n_steps, x1, x2, rho, epsilon) {
+  
+  df <- data.frame(step = numeric(),
+                   x1 = numeric(),
+                   x2 = numeric(),
+                   fx = numeric())
+  
+  init <- data.frame(step = 0,
+                   x1 = x1,
+                   x2 = x2,
+                   fx = fx(x1,x2))
+  
+  df <- rbind(df,init)
+  
+  v1 <- 0
+  v2 <- 0
+  
+  for (i in 1:n_steps){
+    
+    dpx1 <- (4 * x1 ^3) + (2 * x1 * x2) + (x2 ^2) - (40 * x1)
+    dpx2 <- (4 * x2 ^3) + (2 * x1 * x2) + (x1 ^2) - (30 * x2)
+    
+    v1 <- rho * v1 + (1 - rho) * dpx1^2
+    v2 <- rho * v2 + (1 - rho) * dpx2^2
+    
+    x1 <- x1 - (learning_rate / sqrt(v1 + epsilon)) * dpx1
+    x2 <- x2 - (learning_rate / sqrt(v2 + epsilon)) * dpx2
+    fx <- fx(x1,x2)
+    
+    if(!is.finite(fx) || abs(fx - df$fx[i]) < 10e-6){
+      break
+    }
+    
+    result <- data.frame(step = i,
+                   x1 = x1,
+                   x2 = x2,
+                   fx = fx(x1,x2))
+    
+    df <- rbind(df,result)
+    
+    }
+  p <- ggplot() +
+  geom_contour_filled(data = grid, aes(x = x1, y = x2, z = fx)) +
+  geom_path(data = df, aes(x = x1, y = x2), linewidth = 1.5) +
+  theme_void() +
+  theme(legend.position="none")
+  return(list(p,df))
+  }
+
+resultadosp <- gradiente_rmsprop(.001,100,0,5,.9,10e-6)
+resultadosp[[1]]
+```
+
+```{=html}
+<details>
+<summary>Ver tabela</summary>
+```
+
+```{r}
+datatable(resultadosp[[2]])
+```
+
+```{=html}
+</details>
+```
+
+Pelo gráfico acima, nota-se que o algoritmo aparenta estar caminhando para um mínimo local. Entretanto, a taxa de aprendizagem baixa e um número reduzido de passos impede de localizar o mínimo local. Ajustando a taxa de aprendizagem para $\epsilon = 0.1$, podemos observar visualmente o caminhar do algoritmo ao mínimo local mais próximo do ponto inicial.
+
+```{r}
+resultadosp <- gradiente_rmsprop(.1,100,0,5,.9,10e-6)
+resultadosp[[1]]
+```
+
+# i)
+Repita o item d), substituindo o método do gradiente pelo método ADAM (veja a Seção 8.5.3 do livro Deep Learning). Use taxa de aprendizado $\epsilon = 0.001$ e taxas de decaimento $\rho_1 = 0.9$ e $\rho_2 = 0.999$.
+
+```{r}
+gradiente_adam <- function(learning_rate, n_steps, x1, x2, 
+                           rho1, rho2, delta) {
+  
+  df <- data.frame(step = numeric(),
+                   x1 = numeric(),
+                   x2 = numeric(),
+                   fx = numeric())
+  
+  init <- data.frame(step = 0,
+                     x1 = x1,
+                     x2 = x2,
+                     fx = fx(x1, x2))
+  
+  df <- rbind(df, init)
+  
+  s1 <- 0
+  s2 <- 0
+  r1 <- 0
+  r2 <- 0
+  
+  for (i in 1:n_steps) {
+    g1 <- (4 * x1 ^ 3) + (2 * x1 * x2) + (x2 ^ 2) - (40 * x1)
+    g2 <- (4 * x2 ^ 3) + (2 * x1 * x2) + (x1 ^ 2) - (30 * x2)
+    
+    s1 <- rho1 * s1 + (1 - rho1) * g1
+    s2 <- rho1 * s2 + (1 - rho1) * g2
+    
+    r1 <- rho2 * r1 + (1 - rho2) * g1^2
+    r2 <- rho2 * r2 + (1 - rho2) * g2^2
+    
+    s1_hat <- s1 / (1 - rho1^i)
+    s2_hat <- s2 / (1 - rho1^i)
+    
+    r1_hat <- r1 / (1 - rho2^i)
+    r2_hat <- r2 / (1 - rho2^i)
+    
+    x1 <- x1 - (learning_rate / (sqrt(r1_hat) + delta)) * s1_hat
+    x2 <- x2 - (learning_rate / (sqrt(r2_hat) + delta)) * s2_hat
+    
+    fx_val <- fx(x1, x2)
+    
+    if (!is.finite(fx_val) || abs(fx_val - df$fx[i]) < 10e-6) {
+      break
+    }
+    
+    result <- data.frame(step = i,
+                         x1 = x1,
+                         x2 = x2,
+                         fx = fx_val)
+    
+    df <- rbind(df, result)
+  }
+  p <- ggplot() +
+    geom_contour_filled(data = grid, aes(x = x1, y = x2, z = fx)) +
+    geom_path(data = df, aes(x = x1, y = x2), linewidth = 1.5) +
+    theme_void() +
+    theme(legend.position = "none")
+  return(list(p, df))
+}
+gradiente_adam(.001,100,0,5,.9,.999,10e-8)[[1]]
+```
+
+```{=html}
+<details>
+<summary>Ver tabela</summary>
+```
+
+```{r}
+datatable(gradiente_adam(.001,100,0,5,.9,.999,10e-8)[[2]])
+```
+
+```{=html}
+</details>
+```
+
+Análogo ao item anterior, o learning rate $\epsilon = 0.001$ é muito baixo para o algoritmo encontrar o mínimo local no número de passos fornecidos (100). Ajustando o learning rate para $\epsilon = 0.1$, mantido os demais hiperparâmetros constantes, pode-se observar na Figura abaixo a convergência do algoritmo para o mínimo local mais próximo do ponto inicial.
+
+```{r}
+gradiente_adam(.1,100,0,5,.9,.999,10e-8)[[1]]
+```
+
+
+# j)
+Apresente graficamente, em uma única figura, os caminhos percorridos pelas otimizações executadas nos itens d), g), h) e i).
+
+```{r}
+
+p1 <- gradiente(0.01,100,0,5)[[1]] + labs(title="Gradiente Descendente")
+p2 <- gradiente_momento(.9,.01,100,0,5) + labs(title="Momento")
+p3 <- gradiente_rmsprop(.1,100,0,5,.9,10e-6)[[1]] + labs(title="RMSProp")
+p4 <- gradiente_adam(.1,100,0,5,.9,.999,10e-8)[[1]] + labs(title="Adam")
+
+grid.arrange(p1, p2, p3, p4, ncol = 2)
+
+```
+Pela Figura acima, nota-se que todos os algoritmos são eficazes em encontrar um ponto de mínimo, ainda que local. Nenhum deles conseguiu eliminar a necessidade de um bom ponto inicial para encontrar o mínimo global da função. Entretanto, como discutido em sala, não faz parte do paradigma de redes neurais artificiais no estado da arte atual a necessidade do mínimo global da função. Desta forma, estaremos mais preocupados com algoritmos que funcionem bem, e funcionem rápido, na busca pela convergência em algum ponto de mínimo aceitável. Neste sentido, todos foram eficientes, entretanto é possível notar que o gradiente na forma elementar pode ter problemas com pontos de sela e mínimos ruins, enquanto o método do momento pode ser muito errádico. Os métodos RMSProp e Adam aparentam ser mais estáveis, de rápida convergência para um mínimo aceitável e caminhar pouco errático.
