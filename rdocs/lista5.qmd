@@ -1,0 +1,144 @@
+---
+title: "Lista 5 —  Classificação de imagens"
+subtitle: "Redes Neurais Profundas | Prof. Dr. Guilherme Souza Rodrigues"
+author:
+  - name: Bruno Gondim Toledo
+    affiliation: 
+      - name: Universidade de Brasília (UnB) 
+    url: https://penasta.github.io
+date: last-modified
+output: html_document
+geometry: a4paper
+fontsize: 12pt
+format:
+  html:
+    code-fold: true
+    code-summary: "Mostrar códigos"
+    toc: true
+    toc-title: "Índice"
+    lightbox: true
+
+---
+
+# Metodologia
+
+## Infraestrutura
+
+Primeiramente, escolhi utilizar Python para esta tarefa, com a biblioteca principal Pytorch e seus utilitários, além de outras bibliotecas auxiliares para tarefas intermediárias, como o optuna para estudo e seleção de hiperparâmetros.
+
+Esta é uma tarefa relativamente simples, que pode ser executada em computador pessoal, ainda que sem GPU. Entretanto, pensando em aprimorar a velocidade de treinamento dos modelos, utilizei a infraestrutura gratuita do google colab para execução dos códigos na GPU gratuita fornecida. No código, permiti que selecionasse GPU ou CPU, podendo portanto executar em qualquer máquina disponível, com prioridade para GPU, se existente. Também, trouxe a possibilidade de um modo de *fast debug*, principalmente pensando na execução em CPU, tal que o código pudesse ser ajustado e aprimorado com poucas iterações nas etapas intermediárias, e ao final desligar este modo para execução completa da atividade.
+
+## Pré processamento e aumentamento de dados
+
+### Aumentamento de dados
+
+Por se tratar de um problema de classificação de imagens, podemos adotar diversas estratégias para melhorar o nosso dado de entrada, e utilizar destas melhorias também para fazer o aumentamento dos dados. Por se tratarem de poucos dados, e ainda por cima desbalanceados — existem muito mais imagens referentes a impressões digitais masculinas que imagens referentes a impressões digitais femininas —, executei as seguintes tarefas de aumentamento dos dados:
+
+- Replicar as imagens aleatoriamente com alterações de contraste, saturação e brilho;
+
+- Aplicar desfoque gaussiano aleatório para gerar réplicas de cada imagem com leves desfoques;
+
+- Realizar rotações nas imagens aleatoriamente;
+
+- Reduzir as imagens ("cropar");
+
+- Realizar transformações afins nas imagens, mantendo o centro delas invariante.
+
+Com estas estratégias, podemos inserir para nosso modelo uma quantidade aumentada de dados, visto o cenário de poucos exemplos de treinamento, que em geral levam a baixo ajuste da rede.
+
+### Pré processamento
+
+Optei por utilizar redes residuais pré treinadas disponíveis no Pytorch, ao invés de declarar minha própria rede. Para isso, observei que estas redes foram treinadas com imagens no tamanho 224x224, enquanto as imagens disponíveis nesta atividade tinham tamanho 96x103. Por isso, resolvi alterar o tamanho das imagens para 224x224, visto que os modelos foram treinados com este tamanho, e a utilização de outro tamanho poderia comprometer o funcionamento dos filtros aprendidos pela rede, por exemplo.
+
+Além disso, fiz a normalização dos tensores também considerando os pesos de normalização padrão das redes da família **ResNet** do Pytorch, com objetivo análogo ao citado anteriormente.
+
+Também declarei as imagens como se tivessem camadas de cor. Apesar de serem imagens em escala de cinza, estas redes do Pytorch foram treinadas com imagens de três canais de cor (RGB). Para tentar garantir um melhor funcionamento destas redes, repliquei a imagem nestes três canais, como se RGB fossem.
+
+## Divisão treino/validação e amostragem
+
+Dividi os dados do conjunto de treino em 80% treino e 20% validação, para estudo de hiperparâmetros. Esta divisão foi estratificada, considerando o desbalanceamento das classes.
+
+Além disso, apliquei pesos para os registros de treinamento, tal que as imagens de impressões digitais femininas tivessem um peso maior que as impressões digitais masculinas, com objetivo de resolver ou ao menos minorar a questão do desbalancemanto de classes no conjunto de dados.
+
+## Modelos e hiperparâmetros
+
+Como utilizei de redes pré treinadas, as considerei como hiperparâmetros. Isto é, qual rede usar é um dos hiperparâmetros do estudo. As redes que considerei como possibilidade foram: "resnet18"; "resnet50"; "mobilenet_v2"; "efficientnet_b0"; "densenet121". Pela documentação do Pytorch, todas estas redes foram treinadas com imagens 224x224, servem para classificação, e possuem pesos similares, o que favorece as escolhas anteriores de pré processamento.
+
+É possível alterar diversos aspectos destas redes no estudo de hiperparâmetros, como a taxa de aprendizado, camadas da rede, otimizador (Adam, SGD, ...), etc. Entretanto, fiz alguns testes considerando estudos maiores de hiperparâmetros, e pelas limitações de infraestrutura (quanto mais parâmetros decidirmos ajustar, ou teremos menos combinações a fazer considerando a mesma quantidade de iterações optuna, ou teremos de aumentar exponencialmente a quantidade de iterações, aumentando assim conjuntamente o tempo de seleção e uso de computação), notei que não conseguia ganhos significativos por buscar combinações mais detalhadas de hiperparâmetros, além de perder muito em tempo de execução. Desta forma, optei por ajustar apenas o hiperparâmetro de taxa de aprendizagem (para além de qual rede utilizar), e acredito ter obtido resultados satisfatórios para esta tarefa.
+
+Os valores possíveis para a taxa de aprendizado eram entre 0,001 e 0,00001. Fixei o otimizador Adam convencional, e utilizei como função de perda a "BCEWithLogitsLoss", que é uma combinação do Pytorch de uma camada Sigmoid com a perda de Entropia Cruzada Binária (BCELoss).
+
+Defini ainda a utilização de poda pelo optuna, bem como algumas questões fixadas como a paciência, a quantidade de épocas e de iterações, que também foram fixas.
+
+## Treino final e predições no teste
+
+O estudo optuna reportou a rede resnet18, com taxa de aprendizado $\approx 0,001$ como o modelo com maior escore F1 ($\approx 0,5225$). Fixado estes hiperparâmetros, re-treinei a rede combinando os conjuntos de treino e validação, onde obtive um escore F1 $\approx 0,51$, o que parece aceitável para esta atividade.
+
+Portanto, utilizou-se deste modelo treinado sobre todo o conjunto de treino para realizar as predições para o conjunto de teste, as quais seguem em anexo no formato solicitado pela atividade, num arquivo csv de duas colunas.
+
+## Resumo
+
+### Infraestrutura:
+
+- Python
+- Pytorch
+- Google colab
+
+### Data augmentation:
+
+Técnicas utilizadas: |                  Argumentos                   | 
+---------------------|------------------------------------------------
+ColorJitter          |brightness = 0.1, contrast = 0.1, prob = 0.2
+GaussianBlur         |kernel_size = 3, sigma = (0.1, 0.5), prob = 0.1
+RandomHorizontalFlip |prob = 0.5
+RandomRotation       |degrees = (-3, 3)
+RandomResizedCrop    |size = (224, 224), scale = (0.95, 1.0)
+RandomAffine         |degrees=0, translate=(0.03, 0.03)
+
+### Pré processamento:
+
+- Resize -> 96x103 para 224x224 |
+- Normalização, com pesos Resnet|
+- 3 canais de cor, replicando   |
+
+
+### Amostragem
+
+
+- Divisão 80% treino 20% validação
+- Amostragem estratificada para divisão
+- Pesos aumentados para registros femininos
+
+
+### Hiperparâmetros
+
+
+Hiperparâmetro | Valores possíveis 
+---------------|------------------
+Rede           |"resnet18"; "resnet50"; "mobilenet_v2"; "efficientnet_b0"; "densenet121"
+Learning rate  | [0,001;0,00001]
+
+
+### Modelo selecionado
+
+|  Rede  | Learnign rate
+---------|-----------------
+resnet18 | $\approx 0,0001$
+
+Performance desta rede:
+
+Durante estudo optuna (80% treino, 20% validação):
+
+- Escore F1: $\approx 0,5225$
+
+
+Treino final (100% treino):
+
+- Escore F1: $\approx 0,51$
+
+# O código
+
+Os resultados da metodologia supracitada e seus respectivos resultados estão listados abaixo na execução do notebook python.
+
+{{< embed lista5.ipynb# echo=true >}}
+

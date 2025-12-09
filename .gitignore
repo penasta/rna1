@@ -48,3 +48,15 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 template.Rproj
+*.BMP
+rdocs/lista4_files/figure-html/lista4-cell-25-output-1.png
+*.png
+*.js
+*.css
+*.woff
+*.pyc
+*.js
+*.css
+*.woff
+*.zip
+*.zip
